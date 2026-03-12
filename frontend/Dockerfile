@@ -18,12 +18,16 @@ RUN npm run build
 # ── Stage 2: Serve with Nginx ───────────────
 FROM nginx:1.25-alpine
 
-# Nginx konfigürasyonu
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# gettext paketi (envsubst için gerekli)
+RUN apk add --no-cache gettext
+
+# Nginx konfigürasyon şablonu
+COPY nginx.conf.template /etc/nginx/conf.d/default.conf.template
 
 # Build çıktısını kopyala
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 3000
 
-CMD ["nginx", "-g", "daemon off;"]
+# BACKEND_URL env değişkenini nginx.conf'a yerleştir ve nginx başlat
+CMD ["/bin/sh", "-c", "envsubst '$BACKEND_URL' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]

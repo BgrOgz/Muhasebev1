@@ -1,0 +1,41 @@
+server {
+    listen 3000;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Gzip sıkıştırma
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 256;
+
+    # Statik dosyalar — uzun cache
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # API isteklerini backend'e proxy
+    location /api/ {
+        proxy_pass ${BACKEND_URL};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Büyük dosya yükleme desteği
+        client_max_body_size 25M;
+    }
+
+    # SPA — tüm route'ları index.html'e yönlendir
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Sağlık kontrolü
+    location /health {
+        access_log off;
+        return 200 "ok";
+        add_header Content-Type text/plain;
+    }
+}
