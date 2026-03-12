@@ -27,6 +27,16 @@ class Settings(BaseSettings):
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 20
 
+    @property
+    def async_database_url(self) -> str:
+        """Railway postgresql:// → postgresql+asyncpg:// otomatik dönüşüm"""
+        url = self.DATABASE_URL
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return url
+
     # ----- JWT AUTH -----
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"

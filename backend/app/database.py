@@ -11,9 +11,12 @@ from app.config import settings
 from app.models.base import Base
 
 # Async engine — SQLite veya PostgreSQL
+# Railway postgres:// veya postgresql:// → postgresql+asyncpg:// dönüşümü
 _url = settings.DATABASE_URL
-if _url.startswith("postgresql://"):
-    _url = _url.replace("postgresql://", "postgresql+asyncpg://")
+if _url.startswith("postgres://"):
+    _url = _url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif _url.startswith("postgresql://"):
+    _url = _url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 _is_sqlite = _url.startswith("sqlite")
 
