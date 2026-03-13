@@ -212,9 +212,10 @@ YANIT FORMATI (sadece JSON döndür, başka hiçbir şey yazma):
 
         # Fatura kalemlerini metne çevir
         line_items_text = ""
+        raw_pdf_text = ""
 
-        # Öncelik 1: UBL-XML'den kalem bilgisi
         if invoice.ubl_xml:
+            # Öncelik 1: UBL-XML'den yapılandırılmış kalem bilgisi
             lines = invoice.ubl_xml.get("Invoice", {}).get("InvoiceLine", [])
             if isinstance(lines, dict):
                 lines = [lines]
@@ -227,10 +228,24 @@ YANIT FORMATI (sadece JSON döndür, başka hiçbir şey yazma):
                     amount = amount.get("#text", "?")
                 line_items_text += f"  {i}. {desc}: {amount} TRY\n"
 
-        # Öncelik 2: Dosya adından ipucu
+            # Öncelik 2: PDF'den çıkarılan ham metin (AI'ın okuması için)
+            raw_pdf_text = invoice.ubl_xml.get("_raw_text", "")
+
+        # Dosya adından ipucu
         filename_hint = ""
         if invoice.source_filename:
             filename_hint = f"\n- Dosya Adı    : {invoice.source_filename}"
+
+        # Ham PDF metni varsa ve kalem bilgisi yoksa, metni prompt'a ekle
+        raw_text_section = ""
+        if raw_pdf_text and not line_items_text.strip():
+            # İlk 2000 karakteri al (çok uzun metin prompt'u kirletir)
+            truncated = raw_pdf_text[:2000]
+            raw_text_section = f"""
+
+PDF'DEN ÇIKARILAN HAM METİN (faturanın okunabilir içeriği):
+{truncated}
+"""
 
         user_message = f"""Aşağıdaki faturayı analiz et ve JSON döndür:
 
@@ -246,9 +261,10 @@ FATURA BİLGİLERİ:
 
 FATURA KALEMLERİ:
 {line_items_text or '  (kalem bilgisi mevcut değil)'}
-
+{raw_text_section}
 ÖNEMLİ: Kategoriyi belirlerken teslimat/kargo bilgisine değil, satın alınan MAL veya HİZMETin
 ne olduğuna odaklan. Tedarikçi adı yanıltıcı olabilir (ör: incehesap.com bir elektronik mağazasıdır).
+PDF ham metnindeki "Mal Hizmet" tablosunu dikkatle oku — orada satın alınan ürün/hizmet yazar.
 
 Sadece JSON döndür."""
 

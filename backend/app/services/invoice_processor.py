@@ -159,35 +159,59 @@ class InvoiceProcessor:
         vat_number: str = None,  # Optional[str]
     ) -> Supplier:
         """
-        Tedarikçiyi VAT numarasına veya email adresine göre bul.
+        Tedarikçiyi VAT numarasına, isme veya email adresine göre bul.
         Bulamazsa yeni kayıt oluştur.
+
+        ÖNEMLİ: Manuel yüklemelerde sahte email (manuel_yukle@...) kullanılır.
+        Bu email ile eşleme YAPILMAZ, yoksa tüm manuel yüklemeler aynı
+        tedarikçiye bağlanır (örn: ilk yüklenen tedarikçi hep tekrarlanır).
         """
-        # Önce VAT numarasıyla ara
+        is_manual_upload = from_email.startswith("manuel_yukle@")
+
+        # 1. Önce VAT numarasıyla ara (en güvenilir eşleme)
         if vat_number:
             result = await self.db.execute(
                 select(Supplier).where(Supplier.vat_number == vat_number)
             )
             supplier = result.scalar_one_or_none()
             if supplier:
+                # VAT bulundu; ama isim güncellenmişse güncelle
+                if name and name != "Bilinmeyen Tedarikçi" and supplier.name != name:
+                    logger.info(
+                        f"Tedarikçi ismi güncellendi: {supplier.name} → {name}"
+                    )
+                    supplier.name = name
                 return supplier
 
-        # Email adresine göre ara
-        result = await self.db.execute(
-            select(Supplier).where(Supplier.contact_email == from_email)
-        )
-        supplier = result.scalar_one_or_none()
-        if supplier:
-            return supplier
+        # 2. İsim ile ara (tam eşleşme, sadece gerçek isimler için)
+        if name and name != "Bilinmeyen Tedarikçi":
+            result = await self.db.execute(
+                select(Supplier).where(Supplier.name == name)
+            )
+            supplier = result.scalar_one_or_none()
+            if supplier:
+                return supplier
 
-        # Yeni tedarikçi oluştur
+        # 3. Email adresine göre ara — SADECE gerçek email adresleri için
+        #    Manuel yükleme emaili (manuel_yukle@...) ile eşleme YAPMA!
+        if not is_manual_upload:
+            result = await self.db.execute(
+                select(Supplier).where(Supplier.contact_email == from_email)
+            )
+            supplier = result.scalar_one_or_none()
+            if supplier:
+                return supplier
+
+        # 4. Yeni tedarikçi oluştur
         supplier = Supplier(
             name=name,
             vat_number=vat_number,
-            contact_email=from_email,
+            # Manuel yüklemelerde sahte email'i kaydetme
+            contact_email=from_email if not is_manual_upload else None,
         )
         self.db.add(supplier)
         await self.db.flush()
-        logger.info(f"Yeni tedarikçi oluşturuldu: {name} ({from_email})")
+        logger.info(f"Yeni tedarikçi oluşturuldu: {name} (vat={vat_number})")
         return supplier
 
     # ── AI tetikleyici ────────────────────────────────────────────────────────
