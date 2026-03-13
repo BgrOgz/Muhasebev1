@@ -29,8 +29,8 @@ from app.models.classification import Classification
 from app.models.invoice import Invoice, InvoiceStatus
 from app.utils.logger import logger
 
-# ── Tekstil kategorileri (prompt'ta kullanılır) ───────────────────────────────
-TEXTILE_CATEGORIES = [
+# ── Fatura kategorileri (prompt'ta kullanılır) ─────────────────────────────────
+INVOICE_CATEGORIES = [
     "kumas",            # Ham ve işlenmiş kumaş
     "iplik",            # İplik ve iplik ürünleri
     "aksesuar",         # Düğme, fermuar, etiket vb.
@@ -38,10 +38,17 @@ TEXTILE_CATEGORIES = [
     "makine_ekipman",   # Üretim makineleri
     "enerji",           # Elektrik, doğalgaz
     "lojistik",         # Kargo, nakliye
-    "hizmet",           # Danışmanlık, bakım
+    "hizmet",           # Danışmanlık, bakım, yazılım
     "ofis",             # Ofis malzemeleri
-    "diger",            # Diğer
+    "teknoloji",        # Bilgisayar, elektronik, IT ekipmanları
+    "yemek_iase",       # Yemek, gıda, iaşe
+    "bakim_onarim",     # Bina bakım, onarım
+    "sigorta",          # Sigorta primleri
+    "diger",            # Yukarıdakilere uymayan diğer
 ]
+
+# Geriye uyumluluk — eski referanslar için
+TEXTILE_CATEGORIES = INVOICE_CATEGORIES
 
 # ── Muhasebe hesap kodları (öneri için) ──────────────────────────────────────
 ACCOUNT_CODES = {
@@ -54,6 +61,10 @@ ACCOUNT_CODES = {
     "lojistik": "7730",
     "hizmet": "7740",
     "ofis": "7800",
+    "teknoloji": "2550",
+    "yemek_iase": "7750",
+    "bakim_onarim": "7760",
+    "sigorta": "7770",
     "diger": "6990",
 }
 
@@ -153,8 +164,33 @@ class ClassificationService:
         system_prompt = f"""Sen bir tekstil firması için e-fatura analiz uzmanısın.
 Görevin: Gelen fatura verilerini analiz ederek JSON formatında sınıflandırma sonucu üretmek.
 
+Firma tekstil sektöründe faaliyet gösteriyor ancak teknoloji, ofis, yemek, sigorta gibi
+sektör dışı gider faturaları da alabilir. Kategoriyi faturadaki MAL/HİZMET içeriğine göre seç,
+tedarikçi ismi veya kargo bilgisine göre değil.
+
+Örneğin:
+- Ekran kartı, bilgisayar, yazıcı → teknoloji
+- Kumaş, parça boya → kumas veya boya_kimyasal
+- HepsiJet/Aras Kargo teslimatı ama ürün elektronik → teknoloji (kargoya değil ürüne bak)
+
 KATEGORİLER (sadece bunlardan birini seç):
-{', '.join(TEXTILE_CATEGORIES)}
+{', '.join(INVOICE_CATEGORIES)}
+
+KATEGORİ AÇIKLAMALARI:
+- kumas: Ham kumaş, işlenmiş kumaş alımları
+- iplik: İplik ve iplik ürünleri
+- aksesuar: Düğme, fermuar, etiket, ambalaj
+- boya_kimyasal: Boya, kimyasal madde
+- makine_ekipman: Üretim makineleri, yedek parça
+- enerji: Elektrik, doğalgaz, su faturaları
+- lojistik: Kargo, nakliye, taşımacılık HİZMETİ faturaları (ürün taşıma bedeli)
+- hizmet: Danışmanlık, yazılım hizmeti, bakım sözleşmesi
+- ofis: Kırtasiye, ofis mobilyası
+- teknoloji: Bilgisayar, elektronik, IT ekipmanı, yazıcı, ekran kartı, telefon
+- yemek_iase: Yemek, gıda, iaşe, kantin
+- bakim_onarim: Bina bakım, tesisat, onarım
+- sigorta: Sigorta primleri
+- diger: Yukarıdakilere uymayan giderler
 
 RİSK SEVİYELERİ:
 - low    : Normal fatura, standart tutar, bilinen tedarikçi
@@ -176,6 +212,8 @@ YANIT FORMATI (sadece JSON döndür, başka hiçbir şey yazma):
 
         # Fatura kalemlerini metne çevir
         line_items_text = ""
+
+        # Öncelik 1: UBL-XML'den kalem bilgisi
         if invoice.ubl_xml:
             lines = invoice.ubl_xml.get("Invoice", {}).get("InvoiceLine", [])
             if isinstance(lines, dict):
@@ -189,6 +227,11 @@ YANIT FORMATI (sadece JSON döndür, başka hiçbir şey yazma):
                     amount = amount.get("#text", "?")
                 line_items_text += f"  {i}. {desc}: {amount} TRY\n"
 
+        # Öncelik 2: Dosya adından ipucu
+        filename_hint = ""
+        if invoice.source_filename:
+            filename_hint = f"\n- Dosya Adı    : {invoice.source_filename}"
+
         user_message = f"""Aşağıdaki faturayı analiz et ve JSON döndür:
 
 FATURA BİLGİLERİ:
@@ -199,10 +242,13 @@ FATURA BİLGİLERİ:
 - KDV Hariç     : {invoice.amount} {invoice.currency}
 - KDV           : {invoice.tax_amount} {invoice.currency}
 - Genel Toplam  : {invoice.total_amount} {invoice.currency}
-- Kaynak Email  : {invoice.source_email or '-'}
+- Kaynak Email  : {invoice.source_email or '-'}{filename_hint}
 
 FATURA KALEMLERİ:
 {line_items_text or '  (kalem bilgisi mevcut değil)'}
+
+ÖNEMLİ: Kategoriyi belirlerken teslimat/kargo bilgisine değil, satın alınan MAL veya HİZMETin
+ne olduğuna odaklan. Tedarikçi adı yanıltıcı olabilir (ör: incehesap.com bir elektronik mağazasıdır).
 
 Sadece JSON döndür."""
 
@@ -237,7 +283,7 @@ Sadece JSON döndür."""
 
         # Alanları doğrula ve temizle
         category = data.get("category", "diger").lower()
-        if category not in TEXTILE_CATEGORIES:
+        if category not in INVOICE_CATEGORIES:
             category = "diger"
 
         risk_level = data.get("risk_level", "medium").lower()
