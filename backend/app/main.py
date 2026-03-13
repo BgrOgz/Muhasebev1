@@ -63,7 +63,12 @@ app = FastAPI(
 _origins = (
     ["http://localhost:3000", "http://127.0.0.1:3000"]
     if settings.APP_ENV == "development"
-    else [settings.FRONTEND_URL, f"https://www.{settings.FRONTEND_URL.replace('https://', '')}"]
+    else [
+        settings.FRONTEND_URL,
+        f"https://www.{settings.FRONTEND_URL.replace('https://', '').replace('http://', '')}",
+        "https://temtasftr.com",
+        "https://www.temtasftr.com",
+    ]
 )
 
 app.add_middleware(
