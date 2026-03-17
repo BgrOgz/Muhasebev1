@@ -136,7 +136,19 @@ class NotificationService:
         """
         E-posta gönder. Başarılıysa True, başarısızsa False.
         SMTP yapılandırılmamışsa yalnızca loglar.
+
+        Not: E-posta adresleri header injection saldırılarını önlemek için doğrulanır.
+        Geçersiz adresleri False dönerek reddeder.
         """
+        from app.utils.validators import validate_email_address
+
+        # E-posta adresini doğrula
+        try:
+            to = validate_email_address(to)
+        except ValueError as exc:
+            logger.error(f"[Notification] ❌ Geçersiz e-posta adresi: {exc}")
+            return False
+
         if not self.enabled:
             logger.debug(
                 f"[Notification] SMTP yapılandırılmamış — e-posta simüle edildi\n"
@@ -164,7 +176,11 @@ class NotificationService:
             return False
 
     def _send_multi(self, recipients: list[str], subject: str, html: str) -> None:
-        """Birden fazla alıcıya gönderir (boş / sadece boşluk içerenleri atlar)"""
+        """
+        Birden fazla alıcıya gönderir.
+        Boş / sadece boşluk içerenleri atlar.
+        Geçersiz e-posta adresleri _send() tarafından doğrulanır.
+        """
         for email in recipients:
             if email and email.strip():
                 self._send(email, subject, html)

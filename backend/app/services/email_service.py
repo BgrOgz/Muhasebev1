@@ -248,8 +248,12 @@ class GmailService:
         import smtplib
         from email.mime.text import MIMEText
         from email.mime.multipart import MIMEMultipart
+        from app.utils.validators import validate_email_address
 
         try:
+            # E-posta adresini doğrula (header injection saldırılarını önlemek için)
+            to_email = validate_email_address(to_email)
+
             msg = MIMEMultipart()
             msg["Subject"] = "E-Fatura İşleme Hatası"
             msg["From"] = settings.GMAIL_SERVICE_EMAIL
@@ -279,6 +283,9 @@ Fatura Otomasyon Sistemi
             logger.info(f"Hata bildirimi gönderildi → {to_email}")
             return True
 
+        except ValueError as exc:
+            logger.error(f"Geçersiz e-posta adresi: {exc}")
+            return False
         except Exception as exc:
             logger.error(f"Hata bildirimi gönderilemedi: {exc}")
             return False
