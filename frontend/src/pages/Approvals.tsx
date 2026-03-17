@@ -88,13 +88,23 @@ function ActionModal({ approval, action, onConfirm, onCancel, loading }: ActionM
         )}
 
         <div className="flex gap-3 mt-6">
-          <button onClick={onCancel} className="btn-secondary flex-1 justify-center" disabled={loading}>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
             İptal
           </button>
           <button
+            type="button"
             onClick={handleSubmit}
             disabled={loading}
-            className={`flex-1 justify-center ${isApprove ? 'btn-success' : 'btn-danger'}`}
+            className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-white transition-colors disabled:opacity-50 ${
+              isApprove
+                ? 'bg-green-600 hover:bg-green-700'
+                : 'bg-red-600 hover:bg-red-700'
+            }`}
           >
             {loading ? 'İşleniyor...' : isApprove ? 'Onayla' : 'Reddet'}
           </button>
@@ -148,15 +158,17 @@ function ApprovalCard({ approval, onAction }: ApprovalCardProps) {
         {approval.status === 'pending' && (
           <div className="flex gap-2 mt-4">
             <button
+              type="button"
               onClick={() => onAction(approval, 'approved')}
-              className="btn-success flex-1 justify-center text-sm py-2"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700 transition-colors"
             >
               <CheckCircle size={15} />
               Onayla
             </button>
             <button
+              type="button"
               onClick={() => onAction(approval, 'rejected')}
-              className="btn-danger flex-1 justify-center text-sm py-2"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors"
             >
               <XCircle size={15} />
               Reddet
@@ -226,12 +238,16 @@ export function Approvals() {
   const fetchApprovals = useCallback(async () => {
     setLoading(true)
     try {
-      const [pendingRes, completedRes] = await Promise.all([
+      const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
         approvalsApi.list({ status: 'pending' }),
         approvalsApi.list({ status: 'approved', per_page: 30 }),
+        approvalsApi.list({ status: 'rejected', per_page: 30 }),
       ])
       setPending(pendingRes.data.data.items ?? [])
-      setCompleted(completedRes.data.data.items ?? [])
+      setCompleted([
+        ...(approvedRes.data.data.items ?? []),
+        ...(rejectedRes.data.data.items ?? []),
+      ])
     } finally {
       setLoading(false)
     }
