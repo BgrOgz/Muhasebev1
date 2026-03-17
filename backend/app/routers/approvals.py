@@ -34,12 +34,15 @@ async def list_my_approvals(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=100),
 ):
-    """Kullanıcıya ait bekleyen / tamamlanan onayları listele"""
+    """Kullanıcıya ait bekleyen / tamamlanan onayları listele.
+    Admin rolündeki kullanıcılar tüm onayları görür."""
     query = (
         select(Approval)
         .options(selectinload(Approval.invoice).selectinload(Invoice.supplier))
-        .where(Approval.approver_id == current_user.id)
     )
+    # Admin tüm onayları görür, diğer roller sadece kendine atananları
+    if current_user.role != "admin":
+        query = query.where(Approval.approver_id == current_user.id)
 
     if status:
         query = query.where(Approval.status == status)
@@ -99,8 +102,8 @@ async def action_approval(
     if not approval:
         raise NotFoundError("Onay kaydı")
 
-    # Sadece bu onayın sahibi işlem yapabilir
-    if approval.approver_id != current_user.id:
+    # Admin tüm onayları işleyebilir, diğer roller sadece kendine atananları
+    if approval.approver_id != current_user.id and current_user.role != "admin":
         raise ForbiddenError("Bu onay size ait değil.")
 
     # Zaten işlem yapılmış mı?
