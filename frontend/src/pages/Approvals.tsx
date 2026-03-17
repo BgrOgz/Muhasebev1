@@ -64,12 +64,15 @@ function ActionModal({ approval, action, onConfirm, onCancel, loading }: ActionM
               Red sebebi <span className="text-red-500">*</span>
             </label>
             <textarea
-              className="input resize-none h-24"
+              className={`input resize-none h-24 ${!reason.trim() ? 'border-red-300 focus:ring-red-400' : ''}`}
               placeholder="Neden reddediyorsunuz?"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               required
             />
+            {!reason.trim() && (
+              <p className="text-xs text-red-500 mt-1">Red sebebi yazmadan reddedemezsiniz.</p>
+            )}
           </div>
         )}
 
@@ -80,7 +83,9 @@ function ActionModal({ approval, action, onConfirm, onCancel, loading }: ActionM
           <button
             onClick={() => onConfirm({ comments, reason_rejected: reason })}
             disabled={loading || (!isApprove && !reason.trim())}
-            className={`flex-1 justify-center ${isApprove ? 'btn-success' : 'btn-danger'}`}
+            className={`flex-1 justify-center ${
+              isApprove ? 'btn-success' : 'btn-danger'
+            } ${(!isApprove && !reason.trim()) ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {loading ? 'İşleniyor...' : isApprove ? 'Onayla' : 'Reddet'}
           </button>
