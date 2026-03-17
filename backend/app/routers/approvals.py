@@ -34,14 +34,16 @@ async def list_my_approvals(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=100),
 ):
-    """Kullanıcıya ait bekleyen / tamamlanan onayları listele.
-    Admin rolündeki kullanıcılar tüm onayları görür."""
+    """Onayları listele.
+    - admin: tüm onayları görür
+    - approver: tüm onayları görür (sadece low/medium risk işleyebilir)
+    - diğer roller: sadece kendine atananları görür"""
     query = (
         select(Approval)
         .options(selectinload(Approval.invoice).selectinload(Invoice.supplier))
     )
-    # Admin tüm onayları görür, diğer roller sadece kendine atananları
-    if current_user.role != "admin":
+    # Admin ve approver tüm onayları görür, diğer roller sadece kendine atananları
+    if current_user.role not in ("admin", "approver"):
         query = query.where(Approval.approver_id == current_user.id)
 
     if status:
@@ -54,6 +56,16 @@ async def list_my_approvals(
 
     result = await db.execute(query)
     approvals = result.scalars().all()
+
+    # Approver yüksek risk işleyemez — can_action bilgisi ekle
+    def _can_action(approval_item) -> bool:
+        if current_user.role == "admin":
+            return True
+        if current_user.role == "approver":
+            risk = approval_item.invoice.risk_level if approval_item.invoice else "medium"
+            return risk != "high"
+        # Diğer roller — sadece kendine atananları işleyebilir
+        return approval_item.approver_id == current_user.id
 
     return {
         "status": "success",
@@ -72,6 +84,7 @@ async def list_my_approvals(
                     },
                     "approval_level": a.approval_level,
                     "status": a.status,
+                    "can_action": _can_action(a),
                     "created_at": a.created_at.isoformat(),
                 }
                 for a in approvals
@@ -102,9 +115,28 @@ async def action_approval(
     if not approval:
         raise NotFoundError("Onay kaydı")
 
-    # Admin tüm onayları işleyebilir, diğer roller sadece kendine atananları
-    if approval.approver_id != current_user.id and current_user.role != "admin":
-        raise ForbiddenError("Bu onay size ait değil.")
+    # Yetki kontrolü:
+    # - admin: tüm onayları işleyebilir
+    # - approver: sadece low/medium risk onayları işleyebilir
+    # - diğer: sadece kendine atananları
+    if approval.approver_id != current_user.id:
+        if current_user.role == "admin":
+            pass  # Admin her şeyi işleyebilir
+        elif current_user.role == "approver":
+            invoice_risk = approval.invoice.risk_level if approval.invoice else "medium"
+            if invoice_risk == "high":
+                raise ForbiddenError(
+                    "Yüksek riskli faturalar sadece admin tarafından onaylanabilir."
+                )
+        else:
+            raise ForbiddenError("Bu onay size ait değil.")
+    elif current_user.role == "approver":
+        # Kendine atanmış olsa bile high risk kontrolü
+        invoice_risk = approval.invoice.risk_level if approval.invoice else "medium"
+        if invoice_risk == "high":
+            raise ForbiddenError(
+                "Yüksek riskli faturalar sadece admin tarafından onaylanabilir."
+            )
 
     # Zaten işlem yapılmış mı?
     if approval.status != ApprovalStatus.PENDING:
