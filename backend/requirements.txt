@@ -34,6 +34,7 @@ sendgrid==6.11.0
 PyPDF2==3.0.1
 lxml==5.1.0
 pymupdf>=1.24.0
+defusedxml==0.7.1
 
 # Scheduler (Email polling + Reminder)
 apscheduler==3.10.4

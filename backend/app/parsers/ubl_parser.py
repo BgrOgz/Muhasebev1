@@ -14,6 +14,7 @@ import json
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Optional
+from defusedxml.ElementTree import fromstring as safe_fromstring
 from xml.etree import ElementTree as ET
 
 from app.parsers.base_parser import BaseParser, ParsedInvoice
@@ -37,7 +38,7 @@ class UBLParser(BaseParser):
     def parse(self) -> dict:
         """XML içeriğini parse et, standart fatura dict'i döndür"""
         try:
-            root = ET.fromstring(self.content)
+            root = safe_fromstring(self.content)
         except ET.ParseError as exc:
             raise ValueError(f"Geçersiz XML formatı: {exc}") from exc
 

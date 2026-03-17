@@ -29,7 +29,13 @@ COPY nginx.conf.template /etc/nginx/conf.d/default.conf.template
 # Build çıktısını kopyala
 COPY --from=builder /app/dist /usr/share/nginx/html
 
+# Nginx temp klasörlerine non-root yazma izni
+RUN chown -R nginx:nginx /var/cache/nginx /var/log/nginx /etc/nginx/conf.d && \
+    touch /var/run/nginx.pid && chown nginx:nginx /var/run/nginx.pid
+
 EXPOSE 3000
+
+USER nginx
 
 # BACKEND_URL env değişkenini nginx.conf'a yerleştir ve nginx başlat
 CMD ["/bin/sh", "-c", "envsubst '$BACKEND_URL' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]

@@ -17,9 +17,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Uygulama kodu
 COPY . .
 
+# Non-root kullanıcı oluştur
+RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser
+
 # Gerekli klasörler
-RUN mkdir -p uploads archive
+RUN mkdir -p uploads archive && chown -R appuser:appuser /app
 
 EXPOSE 8000
+
+USER appuser
 
 CMD ["/bin/sh", "-c", "python -m scripts.seed_admin || true && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

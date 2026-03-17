@@ -51,7 +51,10 @@ async def list_invoices(
     if category:
         query = query.where(Invoice.category == category)
 
-    # Sıralama
+    # Sıralama — whitelist ile SQL injection önleme
+    ALLOWED_SORT_FIELDS = {"created_at", "amount", "total_amount", "invoice_date", "status", "category", "risk_level"}
+    if sort_by not in ALLOWED_SORT_FIELDS:
+        sort_by = "created_at"
     sort_col = getattr(Invoice, sort_by, Invoice.created_at)
     query = query.order_by(sort_col.desc() if order == "desc" else sort_col.asc())
 
@@ -100,6 +103,17 @@ async def upload_invoice(
     # Dosya boyutu kontrolü
     if len(content) > settings.max_file_size_bytes:
         raise FileTooLargeError(settings.MAX_FILE_SIZE_MB)
+
+    # Magic bytes ile dosya içeriği doğrulama
+    _MAGIC = {
+        "pdf": [b"%PDF"],
+        "xml": [b"<?xml", b"<Invoice", b"<inv:Invoice"],
+        "xls": [b"\xd0\xcf\x11\xe0"],  # OLE2
+        "xlsx": [b"PK\x03\x04"],        # ZIP (OOXML)
+    }
+    signatures = _MAGIC.get(ext, [])
+    if signatures and not any(content[:16].lstrip().startswith(sig) for sig in signatures):
+        raise InvalidFileTypeError(settings.allowed_extensions_list)
 
     # EmailAttachment nesnesi oluştur (processor email'den gelen gibi kabul eder)
     attachment = EmailAttachment(

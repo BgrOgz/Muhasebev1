@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # ----- JWT AUTH -----
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRE_HOURS: int = 24
+    JWT_EXPIRE_HOURS: int = 1  # Production'da kısa tutulmalı (refresh token ile uzatılır)
 
     # ----- GMAIL -----
     GMAIL_SERVICE_EMAIL: str = ""

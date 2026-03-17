@@ -6,6 +6,8 @@ POST /auth/logout   → Token geçersiz kıl (client-side)
 GET  /auth/me       → Mevcut kullanıcı bilgisi
 """
 
+import time
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
@@ -23,19 +25,48 @@ from app.utils.security import (
     verify_password,
 )
 from app.config import settings
+from app.utils.logger import logger
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
+# ── Basit in-memory rate limiter (Redis yoksa) ──────────────────────────────
+_login_attempts: dict[str, list[float]] = defaultdict(list)
+_RATE_LIMIT_WINDOW = 300  # 5 dakika
+_RATE_LIMIT_MAX = 5       # 5 deneme / 5 dakika
+
+
+def _check_rate_limit(key: str) -> bool:
+    """Rate limit kontrolü. True = izin verildi, False = bloklandı."""
+    now = time.time()
+    attempts = _login_attempts[key]
+    # Eski denemeleri temizle
+    _login_attempts[key] = [t for t in attempts if now - t < _RATE_LIMIT_WINDOW]
+    if len(_login_attempts[key]) >= _RATE_LIMIT_MAX:
+        return False
+    _login_attempts[key].append(now)
+    return True
+
+
 @router.post("/login")
-async def login(body: LoginRequest, db: DB):
+async def login(body: LoginRequest, request: Request, db: DB):
     """Kullanıcı giriş — JWT access + refresh token döner"""
+
+    # Rate limiting — IP bazlı
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        logger.warning(f"[Auth] Rate limit aşıldı: {client_ip}")
+        raise UnauthorizedError(
+            "Çok fazla giriş denemesi. Lütfen 5 dakika sonra tekrar deneyin."
+        )
+
     result = await db.execute(
         select(User).where(User.email == body.email, User.is_active == True)
     )
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(body.password, user.password_hash):
+        logger.warning(f"[Auth] Başarısız giriş denemesi: {body.email} (IP: {client_ip})")
         raise UnauthorizedError("E-posta veya şifre hatalı.")
 
     # Son giriş zamanını güncelle
