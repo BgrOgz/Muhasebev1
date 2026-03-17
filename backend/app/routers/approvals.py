@@ -18,9 +18,11 @@ from app.models.approval import Approval, ApprovalLevel, ApprovalStatus
 from app.models.classification import Classification
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.audit_log import AuditLog
+from app.models.user import User
 from app.schemas.approval import ApprovalActionRequest
 from app.services.notification_service import notification_service
 from app.utils.exceptions import ForbiddenError, NotFoundError, ValidationError
+from app.utils.logger import logger
 
 router = APIRouter(prefix="/approvals", tags=["Onaylar"])
 
@@ -38,6 +40,11 @@ async def list_my_approvals(
     - admin: tüm onayları görür
     - approver: tüm onayları görür (sadece low/medium risk işleyebilir)
     - diğer roller: sadece kendine atananları görür"""
+
+    # Onay kaydı eksik olan faturaları otomatik düzelt (admin/approver için)
+    if current_user.role in ("admin", "approver"):
+        await _auto_create_missing_approvals(db, current_user)
+
     query = (
         select(Approval)
         .options(selectinload(Approval.invoice).selectinload(Invoice.supplier))
@@ -279,6 +286,91 @@ async def action_approval(
             "notifications_sent": notifications_sent,
         },
     }
+
+
+# ── Eksik onay kayıtlarını otomatik oluştur ──────────────────────────────────
+
+async def _auto_create_missing_approvals(db, current_user) -> None:
+    """
+    awaiting_first_approval veya awaiting_final_approval durumundaki faturalar
+    için Approval kaydı yoksa otomatik oluştur.
+    Bu durumlar, fatura yüklendiğinde FIRST_APPROVER_EMAIL ile eşleşen kullanıcı
+    bulunamadığında ortaya çıkar.
+    """
+    from sqlalchemy import and_, exists
+
+    # 1. awaiting_first_approval durumunda olup pending first-approval kaydı olmayan faturalar
+    first_subq = (
+        select(Approval.invoice_id)
+        .where(
+            Approval.approval_level == ApprovalLevel.FIRST,
+            Approval.status == ApprovalStatus.PENDING,
+        )
+    )
+    missing_first = await db.execute(
+        select(Invoice)
+        .where(
+            Invoice.status == InvoiceStatus.AWAITING_FIRST_APPROVAL,
+            ~Invoice.id.in_(first_subq),
+        )
+    )
+    invoices_needing_first = missing_first.scalars().all()
+
+    # 2. awaiting_final_approval durumunda olup pending final-approval kaydı olmayan faturalar
+    final_subq = (
+        select(Approval.invoice_id)
+        .where(
+            Approval.approval_level == ApprovalLevel.FINAL,
+            Approval.status == ApprovalStatus.PENDING,
+        )
+    )
+    missing_final = await db.execute(
+        select(Invoice)
+        .where(
+            Invoice.status == InvoiceStatus.AWAITING_FINAL_APPROVAL,
+            ~Invoice.id.in_(final_subq),
+        )
+    )
+    invoices_needing_final = missing_final.scalars().all()
+
+    created = 0
+
+    for inv in invoices_needing_first:
+        # Uygun approver bul: önce config'deki email, sonra herhangi bir admin
+        approver = await _get_user_by_email(db, _get_setting("FIRST_APPROVER_EMAIL"))
+        if not approver:
+            result = await db.execute(
+                select(User).where(User.role == "admin", User.is_active == True).limit(1)
+            )
+            approver = result.scalar_one_or_none()
+        if approver:
+            db.add(Approval(
+                invoice_id=inv.id,
+                approver_id=approver.id,
+                approval_level=ApprovalLevel.FIRST,
+                status=ApprovalStatus.PENDING,
+            ))
+            created += 1
+
+    for inv in invoices_needing_final:
+        approver = await _get_user_by_email(db, _get_setting("FINAL_APPROVER_EMAIL"))
+        if not approver:
+            result = await db.execute(
+                select(User).where(User.role == "admin", User.is_active == True).limit(1)
+            )
+            approver = result.scalar_one_or_none()
+        if approver:
+            db.add(Approval(
+                invoice_id=inv.id,
+                approver_id=approver.id,
+                approval_level=ApprovalLevel.FINAL,
+                status=ApprovalStatus.PENDING,
+            ))
+            created += 1
+
+    if created:
+        await db.flush()
+        logger.info(f"[Approvals] {created} eksik onay kaydı otomatik oluşturuldu")
 
 
 # ── Yardımcı fonksiyonlar ─────────────────────────────────────────────────────

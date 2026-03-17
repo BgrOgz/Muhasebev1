@@ -409,10 +409,12 @@ Sadece JSON döndür."""
         approver = result.scalar_one_or_none()
 
         if not approver:
-            # Yapılandırılan kullanıcı yoksa herhangi bir admin'e ata
-            from app.models.user import User
+            # Yapılandırılan kullanıcı yoksa herhangi bir admin veya approver'a ata
             fallback = await self.db.execute(
-                select(User).where(User.role == "admin", User.is_active == True).limit(1)
+                select(User).where(
+                    User.role.in_(["admin", "approver"]),
+                    User.is_active == True,
+                ).limit(1)
             )
             approver = fallback.scalar_one_or_none()
 
