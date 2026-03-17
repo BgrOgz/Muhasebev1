@@ -107,6 +107,8 @@ export const invoicesApi = {
     })
   },
 
+  delete: (id: string) => api.delete(`/invoices/${id}`),
+
   reclassify: (id: string) => api.post(`/invoices/${id}/reclassify`),
 
   auditLog: (id: string) => api.get(`/invoices/${id}/audit-log`),

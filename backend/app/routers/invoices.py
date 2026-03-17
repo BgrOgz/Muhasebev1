@@ -200,8 +200,10 @@ async def update_invoice(
 
 @router.delete("/{invoice_id}", dependencies=[Depends(require_role("admin"))])
 async def delete_invoice(invoice_id: uuid.UUID, current_user: CurrentUser, db: DB):
-    """Soft delete — sadece admin (deleted_at set edilir)"""
-    from datetime import datetime, timezone
+    """Hard delete — sadece admin (fatura ve ilişkili kayıtlar tamamen silinir)"""
+    from app.models.classification import Classification
+    from app.models.approval import Approval
+    from app.models.audit_log import AuditLog
 
     result = await db.execute(
         select(Invoice).where(Invoice.id == invoice_id, Invoice.deleted_at.is_(None))
@@ -210,10 +212,18 @@ async def delete_invoice(invoice_id: uuid.UUID, current_user: CurrentUser, db: D
     if not invoice:
         raise NotFoundError("Fatura")
 
-    invoice.deleted_at = datetime.now(timezone.utc)
+    # İlişkili kayıtları sil
+    await db.execute(select(AuditLog).where(AuditLog.invoice_id == invoice_id))
+    from sqlalchemy import delete as sql_delete
+    await db.execute(sql_delete(AuditLog).where(AuditLog.invoice_id == invoice_id))
+    await db.execute(sql_delete(Approval).where(Approval.invoice_id == invoice_id))
+    await db.execute(sql_delete(Classification).where(Classification.invoice_id == invoice_id))
+
+    # Faturayı tamamen sil
+    await db.delete(invoice)
     await db.commit()
 
-    return {"status": "success", "message": "Fatura silindi."}
+    return {"status": "success", "message": "Fatura tamamen silindi."}
 
 
 @router.post("/{invoice_id}/reclassify")
