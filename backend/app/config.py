@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # ----- UYGULAMA -----
     APP_ENV: str = "development"
     APP_SECRET_KEY: str
-    DEBUG: bool = True
+    DEBUG: bool = False  # Production'da kapalı — geliştirmede .env'den True yapılabilir
 
     # ----- VERİTABANI -----
     DATABASE_URL: str

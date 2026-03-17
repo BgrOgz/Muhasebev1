@@ -27,6 +27,15 @@ if _is_sqlite:
         connect_args={"check_same_thread": False},
     )
 else:
+    # Production'da SSL bağlantısını zorla (man-in-the-middle koruması)
+    import ssl as _ssl
+    _connect_args: dict = {}
+    if settings.APP_ENV == "production":
+        _ssl_ctx = _ssl.create_default_context()
+        _ssl_ctx.check_hostname = False
+        _ssl_ctx.verify_mode = _ssl.CERT_NONE  # Railway managed DB — self-signed cert
+        _connect_args["ssl"] = _ssl_ctx
+
     engine = create_async_engine(
         _url,
         pool_size=settings.DATABASE_POOL_SIZE,
@@ -34,6 +43,7 @@ else:
         pool_pre_ping=True,
         pool_recycle=3600,
         echo=settings.DEBUG,
+        connect_args=_connect_args,
     )
 
 AsyncSessionLocal = async_sessionmaker(

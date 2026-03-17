@@ -39,6 +39,12 @@ async def get_current_user(
         user_id: str = payload.get("sub")
         if not user_id:
             raise UnauthorizedError("Geçersiz token: 'sub' alanı yok.")
+        # Blacklist kontrolü — logout yapılmış token'ı reddet
+        jti = payload.get("jti")
+        if jti:
+            from app.routers.auth import is_token_blacklisted
+            if is_token_blacklisted(jti):
+                raise UnauthorizedError("Token geçersiz kılınmış. Lütfen tekrar giriş yapın.")
     except JWTError:
         raise UnauthorizedError("Token geçersiz veya süresi dolmuş.")
 

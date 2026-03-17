@@ -431,7 +431,11 @@ async def update_supplier(
     new_values = {}
     update_data = body.model_dump(exclude_unset=True)
 
+    # Mass assignment koruması — sadece izin verilen alanlar güncellenebilir
+    ALLOWED_SUPPLIER_FIELDS = {"name", "vat_number", "contact_email", "phone", "address", "category", "notes", "is_active"}
     for field, value in update_data.items():
+        if field not in ALLOWED_SUPPLIER_FIELDS:
+            continue  # İzin verilmeyen alan — atla
         old_val = getattr(supplier, field, None)
         if old_val != value:
             old_values[field] = old_val

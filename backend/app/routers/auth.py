@@ -35,6 +35,29 @@ _login_attempts: dict[str, list[float]] = defaultdict(list)
 _RATE_LIMIT_WINDOW = 300  # 5 dakika
 _RATE_LIMIT_MAX = 5       # 5 deneme / 5 dakika
 
+# ── In-memory token blacklist (logout sonrası token geçersiz kılma) ─────────
+_token_blacklist: dict[str, float] = {}  # {jti: expire_timestamp}
+_BLACKLIST_CLEANUP_INTERVAL = 300  # Her 5 dakikada süresi dolmuş token'ları temizle
+_last_blacklist_cleanup: float = 0.0
+
+
+def blacklist_token(jti: str, exp_timestamp: float) -> None:
+    """Token'ı blacklist'e ekle (logout'ta çağrılır)"""
+    global _last_blacklist_cleanup
+    _token_blacklist[jti] = exp_timestamp
+    # Periyodik temizlik — süresi dolmuş token'ları sil
+    now = time.time()
+    if now - _last_blacklist_cleanup > _BLACKLIST_CLEANUP_INTERVAL:
+        _last_blacklist_cleanup = now
+        expired = [k for k, v in _token_blacklist.items() if v < now]
+        for k in expired:
+            del _token_blacklist[k]
+
+
+def is_token_blacklisted(jti: str) -> bool:
+    """Token blacklist'te mi kontrol et"""
+    return jti in _token_blacklist
+
 
 def _check_rate_limit(key: str) -> bool:
     """Rate limit kontrolü. True = izin verildi, False = bloklandı."""
@@ -124,11 +147,23 @@ async def refresh_token(body: RefreshRequest, db: DB):
 
 
 @router.post("/logout")
-async def logout(current_user: CurrentUser):
+async def logout(request: Request, current_user: CurrentUser):
     """
-    Logout — JWT stateless olduğu için sunucu tarafında token geçersiz kılma yok.
-    Client access_token'ı silmeli. İleride Redis blacklist eklenebilir.
+    Logout — Token'ı in-memory blacklist'e ekleyerek sunucu tarafında geçersiz kıl.
     """
+    # Authorization header'dan token'ı al ve blacklist'e ekle
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        try:
+            payload = decode_token(token)
+            jti = payload.get("jti", "")
+            exp = payload.get("exp", 0)
+            if jti:
+                blacklist_token(jti, exp)
+                logger.info(f"[Auth] Token blacklisted: user={current_user.email}")
+        except JWTError:
+            pass  # Token zaten geçersiz — sorun yok
     return {"status": "success", "message": "Başarıyla çıkış yapıldı."}
 
 

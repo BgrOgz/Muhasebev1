@@ -19,6 +19,34 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Optional
 
+
+def _sanitize_for_prompt(text: str, max_len: int = 500) -> str:
+    """
+    Prompt injection'a karşı kullanıcı girdisini temizle.
+    - Kontrol karakterlerini sil
+    - Prompt manipülasyon kalıplarını temizle
+    - Uzunluk sınırla
+    """
+    if not text:
+        return ""
+    text = str(text)
+    # Kontrol karakterleri (tab ve newline hariç)
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+    # Prompt injection kalıplarını etkisizleştir
+    injection_patterns = [
+        r'(?i)ignore\s+(previous|above|all)\s+(instructions?|prompts?)',
+        r'(?i)disregard\s+(previous|above|all)',
+        r'(?i)forget\s+(everything|previous|above)',
+        r'(?i)new\s+instructions?:',
+        r'(?i)system\s*:',
+        r'(?i)assistant\s*:',
+        r'(?i)human\s*:',
+        r'(?i)<\s*/?\s*system\s*>',
+    ]
+    for pattern in injection_patterns:
+        text = re.sub(pattern, '[FILTERED]', text)
+    return text[:max_len]
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -231,33 +259,44 @@ YANIT FORMATI (sadece JSON döndür, başka hiçbir şey yazma):
             # Öncelik 2: PDF'den çıkarılan ham metin (AI'ın okuması için)
             raw_pdf_text = invoice.ubl_xml.get("_raw_text", "")
 
-        # Dosya adından ipucu
+        # Dosya adından ipucu (sanitize edilmiş)
         filename_hint = ""
         if invoice.source_filename:
-            filename_hint = f"\n- Dosya Adı    : {invoice.source_filename}"
+            safe_filename = _sanitize_for_prompt(invoice.source_filename, 200)
+            filename_hint = f"\n- Dosya Adı    : {safe_filename}"
 
         # Ham PDF metni varsa ve kalem bilgisi yoksa, metni prompt'a ekle
         raw_text_section = ""
         if raw_pdf_text and not line_items_text.strip():
-            # İlk 2000 karakteri al (çok uzun metin prompt'u kirletir)
-            truncated = raw_pdf_text[:2000]
+            # İlk 2000 karakteri al ve sanitize et
+            truncated = _sanitize_for_prompt(raw_pdf_text, 2000)
             raw_text_section = f"""
 
 PDF'DEN ÇIKARILAN HAM METİN (faturanın okunabilir içeriği):
 {truncated}
 """
 
+        # Kullanıcı girdilerini sanitize et (prompt injection koruması)
+        safe_invoice_no = _sanitize_for_prompt(invoice.invoice_number, 100)
+        safe_supplier = _sanitize_for_prompt(
+            invoice.supplier.name if invoice.supplier else 'Bilinmiyor', 200
+        )
+        safe_vat = _sanitize_for_prompt(
+            invoice.supplier.vat_number if invoice.supplier else '-', 20
+        )
+        safe_email = _sanitize_for_prompt(invoice.source_email or '-', 100)
+
         user_message = f"""Aşağıdaki faturayı analiz et ve JSON döndür:
 
 FATURA BİLGİLERİ:
-- Fatura No     : {invoice.invoice_number}
-- Tedarikçi     : {invoice.supplier.name if invoice.supplier else 'Bilinmiyor'}
-- Vergi No      : {invoice.supplier.vat_number if invoice.supplier else '-'}
+- Fatura No     : {safe_invoice_no}
+- Tedarikçi     : {safe_supplier}
+- Vergi No      : {safe_vat}
 - Fatura Tarihi : {invoice.invoice_date}
 - KDV Hariç     : {invoice.amount} {invoice.currency}
 - KDV           : {invoice.tax_amount} {invoice.currency}
 - Genel Toplam  : {invoice.total_amount} {invoice.currency}
-- Kaynak Email  : {invoice.source_email or '-'}{filename_hint}
+- Kaynak Email  : {safe_email}{filename_hint}
 
 FATURA KALEMLERİ:
 {line_items_text or '  (kalem bilgisi mevcut değil)'}
