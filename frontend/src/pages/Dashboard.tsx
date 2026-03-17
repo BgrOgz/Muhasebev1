@@ -15,7 +15,7 @@ import {
   X,
   Eye,
 } from 'lucide-react'
-import { invoicesApi } from '../services/api'
+import { invoicesApi, systemApi } from '../services/api'
 import { Invoice, InvoiceStatus } from '../types'
 import { RiskBadge } from '../components/RiskBadge'
 import { StatusBadge } from '../components/StatusBadge'
@@ -169,6 +169,20 @@ export function Dashboard() {
     }
   }
 
+  const handleRefresh = async () => {
+    // Email taraması tetikle (admin ise), sonra listeyi yenile
+    if (isAdmin) {
+      try {
+        await systemApi.pollNow()
+        showToast('success', 'Email taraması başlatıldı, liste yenileniyor...')
+      } catch {
+        // Admin değilse veya hata olursa sessizce geç
+      }
+    }
+    // Kısa bekleme — yeni faturalar DB'ye yazılsın
+    setTimeout(() => fetchInvoices(true), 2000)
+  }
+
   const handleViewDetail = async (inv: Invoice) => {
     setDetailLoading(true)
     setSelectedInvoice(inv)
@@ -224,7 +238,7 @@ export function Dashboard() {
           <p className="text-sm text-gray-500 mt-0.5">E-Fatura takip ve yönetim merkezi</p>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => fetchInvoices(true)} className="btn-secondary">
+          <button onClick={handleRefresh} className="btn-secondary">
             <RefreshCw size={16} className={(loading || refreshing) ? 'animate-spin' : ''} />
             Yenile
           </button>
