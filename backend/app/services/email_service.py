@@ -153,16 +153,20 @@ class GmailService:
         )
 
     def _extract_attachments(self, msg: email.message.Message) -> list[EmailAttachment]:
-        """Maildeki kabul edilen ekleri çıkar"""
+        """Maildeki kabul edilen ekleri çıkar (attachment + inline + filename olan her bölüm)"""
         attachments = []
 
         for part in msg.walk():
-            # Sadece attachment bölümlerini al
-            content_disp = part.get_content_disposition() or ""
-            if "attachment" not in content_disp:
+            # Multipart container'ları atla
+            if part.get_content_maintype() == "multipart":
                 continue
 
             filename = part.get_filename()
+            content_disp = part.get_content_disposition() or ""
+
+            # Dosya adı olan veya attachment/inline olarak işaretlenmiş bölümleri al
+            if not filename and "attachment" not in content_disp:
+                continue
             if not filename:
                 continue
 
