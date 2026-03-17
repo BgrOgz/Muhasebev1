@@ -220,10 +220,12 @@ KATEGORİ AÇIKLAMALARI:
 - sigorta: Sigorta primleri
 - diger: Yukarıdakilere uymayan giderler
 
-RİSK SEVİYELERİ:
-- low    : Normal fatura, standart tutar, bilinen tedarikçi
-- medium : Orta risk, dikkate alınmalı
-- high   : Yüksek risk — olağandışı tutar, bilinmeyen tedarikçi, anomali var
+RİSK SEVİYELERİ (tutar bazlı eşikler + anomali kontrolü):
+- low    : Toplam tutar 10.000 TL altı VE anomali yok VE bilinen tedarikçi
+- medium : Toplam tutar 10.000–50.000 TL arası VEYA küçük anomali var
+- high   : Toplam tutar 50.000 TL üstü VEYA ciddi anomali var (sahte belge şüphesi, olağandışı kalem, bilinmeyen tedarikçi + yüksek tutar)
+
+ÖNEMLİ: Tutar TL olarak değerlendirilecek. 20.000 TL üstü faturalar minimum "medium" olmalı. 50.000 TL üstü faturalar kesinlikle "high" olmalı.
 
 YANIT FORMATI (sadece JSON döndür, başka hiçbir şey yazma):
 {{
@@ -343,6 +345,13 @@ Sadece JSON döndür."""
 
         risk_level = data.get("risk_level", "medium").lower()
         if risk_level not in ("low", "medium", "high"):
+            risk_level = "medium"
+
+        # Tutar bazlı minimum risk seviyesi (AI'ın kararını override et)
+        total = float(invoice.total_amount) if invoice.total_amount else 0
+        if total >= 50000 and risk_level != "high":
+            risk_level = "high"
+        elif total >= 20000 and risk_level == "low":
             risk_level = "medium"
 
         confidence = float(data.get("confidence", 0.5))
