@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { Login } from './pages/Login'
@@ -31,14 +31,28 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 }
 
 export function App() {
-  const { isAuthenticated, fetchMe } = useAuthStore()
+  const { isAuthenticated, user, fetchMe } = useAuthStore()
+  const [ready, setReady] = useState(false)
 
-  // Sayfa yenilendiğinde token varsa kullanıcıyı çek
+  // Sayfa yenilendiğinde token varsa kullanıcıyı çek — tamamlanana kadar bekle
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchMe()
+    if (isAuthenticated && !user) {
+      fetchMe().finally(() => setReady(true))
+    } else {
+      setReady(true)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!ready && isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center text-gray-400">
+          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          Yükleniyor...
+        </div>
+      </div>
+    )
+  }
 
   return (
     <BrowserRouter>
