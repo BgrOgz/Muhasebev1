@@ -25,7 +25,17 @@ interface ActionModalProps {
 function ActionModal({ approval, action, onConfirm, onCancel, loading }: ActionModalProps) {
   const [comments, setComments] = useState('')
   const [reason, setReason] = useState('')
+  const [showError, setShowError] = useState(false)
   const isApprove = action === 'approved'
+
+  const handleSubmit = () => {
+    if (!isApprove && !reason.trim()) {
+      setShowError(true)
+      return
+    }
+    setShowError(false)
+    onConfirm({ comments, reason_rejected: reason })
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -64,14 +74,15 @@ function ActionModal({ approval, action, onConfirm, onCancel, loading }: ActionM
               Red sebebi <span className="text-red-500">*</span>
             </label>
             <textarea
-              className={`input resize-none h-24 ${!reason.trim() ? 'border-red-300 focus:ring-red-400' : ''}`}
+              className={`input resize-none h-24 ${showError && !reason.trim() ? 'border-red-500 ring-2 ring-red-300' : ''}`}
               placeholder="Neden reddediyorsunuz?"
               value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              required
+              onChange={(e) => { setReason(e.target.value); setShowError(false) }}
             />
-            {!reason.trim() && (
-              <p className="text-xs text-red-500 mt-1">Red sebebi yazmadan reddedemezsiniz.</p>
+            {showError && !reason.trim() && (
+              <p className="text-sm text-red-600 mt-1 font-medium">
+                Lütfen red sebebi yazın!
+              </p>
             )}
           </div>
         )}
@@ -81,11 +92,9 @@ function ActionModal({ approval, action, onConfirm, onCancel, loading }: ActionM
             İptal
           </button>
           <button
-            onClick={() => onConfirm({ comments, reason_rejected: reason })}
-            disabled={loading || (!isApprove && !reason.trim())}
-            className={`flex-1 justify-center ${
-              isApprove ? 'btn-success' : 'btn-danger'
-            } ${(!isApprove && !reason.trim()) ? 'opacity-50 cursor-not-allowed' : ''}`}
+            onClick={handleSubmit}
+            disabled={loading}
+            className={`flex-1 justify-center ${isApprove ? 'btn-success' : 'btn-danger'}`}
           >
             {loading ? 'İşleniyor...' : isApprove ? 'Onayla' : 'Reddet'}
           </button>
